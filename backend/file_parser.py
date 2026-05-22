@@ -46,19 +46,25 @@ class FileParser:
     @staticmethod
     def parse_doc(file_content: bytes) -> str:
         """
-        Extract text from DOC file.
-        Note: Basic support - may not handle complex formatting.
+        Extract text from legacy .doc files (requires docx2txt).
         """
         try:
             import docx2txt
+        except ImportError as e:
+            raise ValueError(
+                "Legacy .doc files require docx2txt. "
+                "Install with: pip install docx2txt — or upload PDF/DOCX instead."
+            ) from e
+
+        try:
             text = docx2txt.process(io.BytesIO(file_content))
-            return text
-        except Exception:
-            # Fallback: try basic parsing
-            try:
-                return file_content.decode('utf-8', errors='ignore')
-            except Exception as e:
-                raise ValueError(f"Failed to parse DOC: {str(e)}")
+            if text and text.strip():
+                return text
+            raise ValueError("No text extracted from .doc file")
+        except ValueError:
+            raise
+        except Exception as e:
+            raise ValueError(f"Failed to parse DOC: {str(e)}") from e
 
     @staticmethod
     def parse_file(file_content: bytes, filename: str) -> str:

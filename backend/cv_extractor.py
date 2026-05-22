@@ -1,12 +1,54 @@
 """
-CV data extraction module for parsing PDF and DOCX files.
-Extracts structured CV data including contact, experience, education, skills, etc.
+CV data extraction module — structured parsing from plain text with improved heuristics.
 """
 
 import re
 from typing import Optional
-from dataclasses import dataclass, asdict
-from datetime import datetime
+from dataclasses import dataclass
+
+from skills_vocab import find_soft_skills, find_technical_skills
+
+LANGUAGE_KEYWORDS = (
+    "english",
+    "spanish",
+    "french",
+    "german",
+    "chinese",
+    "japanese",
+    "arabic",
+    "portuguese",
+    "russian",
+    "korean",
+    "azerbaijani",
+    "turkish",
+)
+
+DATE_RANGE_RE = re.compile(
+    r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*\d{2,4}"
+    r"|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}"
+    r"|\d{4}\s*[-–—]\s*(?:\d{4}|present|current|now)"
+    r"|present|current",
+    re.IGNORECASE,
+)
+
+JOB_TITLE_HINTS = (
+    "engineer",
+    "developer",
+    "manager",
+    "designer",
+    "analyst",
+    "lead",
+    "architect",
+    "director",
+    "consultant",
+    "specialist",
+    "coordinator",
+    "administrator",
+    "intern",
+    "associate",
+    "scientist",
+    "researcher",
+)
 
 
 @dataclass
@@ -77,39 +119,21 @@ class CVData:
 
 
 class CVExtractor:
-    """Extracts structured data from CV text."""
-
-    # Regex patterns
-    EMAIL_PATTERN = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
-    PHONE_PATTERN = r'(?:\+?1[-.\s]?)?\(?[2-9]\d{2}\)?[-.\s]?[2-9]\d{2}[-.\s]?\d{4}\b'
-    LINKEDIN_PATTERN = r'(?:https?://)?(?:www\.)?linkedin\.com/in/[\w\-]+'
-    WEBSITE_PATTERN = r'https?://[^\s]+|www\.[^\s]+'
-
-    # Common soft skills
-    SOFT_SKILLS = {
-        'communication', 'leadership', 'teamwork', 'problem solving',
-        'critical thinking', 'time management', 'collaboration', 'adaptability',
-        'creativity', 'interpersonal', 'attention to detail', 'project management',
-        'analytical', 'negotiation', 'presentation', 'customer service'
-    }
-
-    # Common programming languages & frameworks
-    TECHNICAL_KEYWORDS = {
-        'python', 'javascript', 'typescript', 'java', 'csharp', 'c++', 'c#', 'go', 'rust',
-        'react', 'vue', 'angular', 'node.js', 'express', 'django', 'flask', 'fastapi',
-        'sql', 'nosql', 'postgresql', 'mysql', 'mongodb', 'redis', 'elasticsearch',
-        'aws', 'azure', 'gcp', 'docker', 'kubernetes', 'ci/cd', 'jenkins', 'gitlab',
-        'git', 'agile', 'scrum', 'rest', 'graphql', 'api', 'microservices',
-        'machine learning', 'ai', 'deep learning', 'tensorflow', 'pytorch', 'numpy', 'pandas'
-    }
+    EMAIL_PATTERN = r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b"
+    PHONE_PATTERN = (
+        r"(?:\+?\d{1,3}[\s\-.]?)?"
+        r"(?:\(?\d{2,4}\)?[\s\-.]?)?"
+        r"\d{2,4}[\s\-.]?\d{2,4}[\s\-.]?\d{2,9}\b"
+    )
+    LINKEDIN_PATTERN = r"(?:https?://)?(?:www\.)?linkedin\.com/in/[\w\-]+/?"
+    WEBSITE_PATTERN = r"https?://[^\s]+|www\.[^\s]+"
 
     def __init__(self, text: str):
-        self.text = text
-        self.lines = text.split('\n')
-        self.lower_text = text.lower()
+        self.text = text.replace("\r\n", "\n").replace("\r", "\n")
+        self.lines = [ln.strip() for ln in self.text.split("\n")]
+        self.lower_text = self.text.lower()
 
     def extract(self) -> CVData:
-        """Extract all CV data from text."""
         contact = self._extract_contact()
         summary = self._extract_summary()
         experience = self._extract_experience()
@@ -126,359 +150,393 @@ class CVExtractor:
             skills=skills,
             certifications=certifications,
             projects=projects,
-            raw_text=self.text
+            raw_text=self.text,
         )
 
     def _extract_contact(self) -> ContactInfo:
-        """Extract contact information."""
         contact = ContactInfo()
 
-        # Extract email
         email_match = re.search(self.EMAIL_PATTERN, self.text)
         if email_match:
             contact.email = email_match.group(0)
 
-        # Extract phone
         phone_match = re.search(self.PHONE_PATTERN, self.text)
         if phone_match:
-            contact.phone = phone_match.group(0)
+            contact.phone = phone_match.group(0).strip()
 
-        # Extract LinkedIn
         linkedin_match = re.search(self.LINKEDIN_PATTERN, self.text, re.IGNORECASE)
         if linkedin_match:
             contact.linkedin = linkedin_match.group(0)
 
-        # Extract website
         website_match = re.search(self.WEBSITE_PATTERN, self.text)
-        if website_match and 'linkedin' not in website_match.group(0).lower():
+        if website_match and "linkedin" not in website_match.group(0).lower():
             contact.website = website_match.group(0)
 
-        # Extract name (first non-empty line, usually)
-        for line in self.lines[:10]:
-            line = line.strip()
-            if line and len(line) < 100 and not re.match(r'^[a-z0-9._%+-]+@', line, re.IGNORECASE):
-                # Heuristic: likely a name if it's short, capitalized, and not an email
-                if re.match(r'^[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*$', line):
-                    contact.name = line
-                    break
+        for line in self.lines[:15]:
+            if not line or len(line) > 80:
+                continue
+            if contact.email and contact.email in line:
+                continue
+            if re.search(self.EMAIL_PATTERN, line):
+                continue
+            if re.search(self.PHONE_PATTERN, line):
+                continue
+            if "linkedin" in line.lower() or line.lower().startswith("http"):
+                continue
+            if re.match(r"^[A-Z][\w\-'.]+(?:\s+[A-Z][\w\-'.]+){0,4}$", line):
+                contact.name = line
+                break
+            if not contact.name and 2 <= len(line.split()) <= 5:
+                contact.name = line
+                break
+
+        for line in self.lines[:20]:
+            if re.search(r"\b(?:city|remote|hybrid)\b", line, re.I):
+                contact.location = line
+                break
+            if re.search(
+                r"[A-Z][a-z]+,\s*[A-Z]{2}\b|[A-Z][a-z]+,\s*[A-Z][a-z]+",
+                line,
+            ):
+                contact.location = line
+                break
 
         return contact
 
     def _extract_summary(self) -> Optional[str]:
-        """Extract professional summary."""
-        summary_keywords = ['summary', 'objective', 'professional summary', 'about']
-        
+        summary_keywords = (
+            "summary",
+            "objective",
+            "professional summary",
+            "profile",
+            "about me",
+            "about",
+        )
+
         for i, line in enumerate(self.lines):
-            if any(keyword in line.lower() for keyword in summary_keywords):
-                # Get next few lines as summary
+            lower = line.lower()
+            if any(kw == lower or kw in lower for kw in summary_keywords):
                 summary_lines = []
-                for j in range(i + 1, min(i + 6, len(self.lines))):
-                    line_text = self.lines[j].strip()
-                    if line_text and not any(
-                        section in line_text.lower() 
-                        for section in ['experience', 'education', 'skills', 'certification']
-                    ):
-                        summary_lines.append(line_text)
-                    else:
+                for j in range(i + 1, min(i + 8, len(self.lines))):
+                    line_text = self.lines[j]
+                    if not line_text:
+                        if summary_lines:
+                            break
+                        continue
+                    if self._is_section_header(line_text):
                         break
-                
+                    summary_lines.append(line_text)
                 if summary_lines:
-                    return ' '.join(summary_lines)
-        
+                    return " ".join(summary_lines)
         return None
 
-    def _extract_experience(self) -> list[Experience]:
-        """Extract work experience."""
-        experiences = []
-        
-        # Find experience section
-        exp_start = -1
-        section_keywords = ['experience', 'work experience', 'professional experience']
-        
+    def _is_section_header(self, line: str) -> bool:
+        lower = line.lower().strip()
+        headers = (
+            "experience",
+            "work experience",
+            "employment",
+            "education",
+            "skills",
+            "certification",
+            "projects",
+            "languages",
+        )
+        return any(h == lower or lower.startswith(h + " ") for h in headers)
+
+    def _section_bounds(self, start_keywords: tuple[str, ...], stop_keywords: tuple[str, ...]) -> tuple[int, int]:
+        start = -1
         for i, line in enumerate(self.lines):
-            if any(keyword in line.lower() for keyword in section_keywords):
-                exp_start = i
+            lower = line.lower()
+            if any(kw in lower for kw in start_keywords):
+                start = i
                 break
-        
-        if exp_start == -1:
-            return experiences
-        
-        # Extract until next section
-        section_end = len(self.lines)
-        next_sections = ['education', 'skills', 'certification', 'project', 'language']
-        
-        for i in range(exp_start + 1, len(self.lines)):
-            if any(section in self.lines[i].lower() for section in next_sections):
-                section_end = i
+        if start == -1:
+            return -1, -1
+
+        end = len(self.lines)
+        for i in range(start + 1, len(self.lines)):
+            lower = self.lines[i].lower()
+            if any(kw in lower for kw in stop_keywords) and self._is_section_header(self.lines[i]):
+                end = i
                 break
-        
-        # Parse each job entry
-        current_role = None
-        current_company = None
-        current_dates = None
-        current_desc = []
-        
-        for i in range(exp_start + 1, section_end):
-            line = self.lines[i].strip()
-            
-            if not line:
-                continue
-            
-            # Detect dates (format: "Jan 2022 - Present" or "01/01/2022 - 12/31/2022")
-            is_date_line = re.search(r'(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|present|current|\d{1,2}[/-]\d{1,2}[/-]\d{4}|\d{4})', line.lower())
-            
-            # Detect job title (has common job keywords)
-            is_job_line = any(
-                role in line.lower() 
-                for role in ['engineer', 'developer', 'manager', 'designer', 'analyst', 'lead', 'architect', 'director', 'consultant']
-            ) and len(line) < 150
-            
-            if is_job_line:
-                if current_role:
-                    # Save previous job
-                    exp = Experience(
-                        role=current_role,
-                        company=current_company or '',
-                        start_date=self._parse_date_range(current_dates)[0] if current_dates else None,
-                        end_date=self._parse_date_range(current_dates)[1] if current_dates else None,
-                        description=' '.join(current_desc) if current_desc else None
-                    )
-                    experiences.append(exp)
-                
-                # Parse new job (format: "Role at Company" or "Role | Company")
-                if ' at ' in line:
-                    parts = line.split(' at ', 1)
-                    current_role = parts[0].strip()
-                    current_company = parts[1].strip()
-                elif ' | ' in line:
-                    parts = line.split(' | ', 1)
-                    current_role = parts[0].strip()
-                    current_company = parts[1].strip()
-                else:
-                    current_role = line
-                    current_company = ''
-                
-                current_dates = None
-                current_desc = []
-            
-            # Detect dates
-            elif is_date_line and (current_role or current_company):
-                current_dates = line
-            
-            # Accumulate description (bullet points or regular text)
-            elif current_role and line:
-                if line.startswith(('•', '-', '*')):
-                    # Remove bullet point and add description
-                    current_desc.append(line[1:].strip())
-                else:
-                    current_desc.append(line)
-        
-        # Add last job
-        if current_role:
-            exp = Experience(
-                role=current_role,
-                company=current_company or '',
-                start_date=self._parse_date_range(current_dates)[0] if current_dates else None,
-                end_date=self._parse_date_range(current_dates)[1] if current_dates else None,
-                description=' '.join(current_desc) if current_desc else None
-            )
-            experiences.append(exp)
-        
+        return start, end
+
+    def _extract_experience(self) -> list[Experience]:
+        experiences = []
+        start, end = self._section_bounds(
+            ("experience", "work experience", "employment history", "professional experience"),
+            ("education", "skills", "certification", "project", "language", "reference"),
+        )
+
+        if start >= 0:
+            experiences = self._parse_experience_block(start + 1, end)
+
+        if not experiences:
+            experiences = self._parse_experience_by_dates()
+
         return experiences
 
-    def _extract_education(self) -> list[Education]:
-        """Extract education."""
-        education = []
-        
-        edu_start = -1
+    def _parse_experience_block(self, start: int, end: int) -> list[Experience]:
+        experiences: list[Experience] = []
+        current_role: Optional[str] = None
+        current_company: Optional[str] = None
+        current_dates: Optional[str] = None
+        current_desc: list[str] = []
+
+        def flush():
+            nonlocal current_role, current_company, current_dates, current_desc
+            if current_role:
+                s, e = self._parse_date_range(current_dates)
+                experiences.append(
+                    Experience(
+                        role=current_role,
+                        company=current_company or "",
+                        start_date=s,
+                        end_date=e,
+                        description=" ".join(current_desc) if current_desc else None,
+                    )
+                )
+            current_role = None
+            current_company = None
+            current_dates = None
+            current_desc = []
+
+        for i in range(start, end):
+            line = self.lines[i]
+            if not line:
+                continue
+
+            is_date_line = bool(DATE_RANGE_RE.search(line))
+            is_job_line = (
+                any(hint in line.lower() for hint in JOB_TITLE_HINTS)
+                or " at " in line.lower()
+                or " | " in line
+                or " — " in line
+            ) and len(line) < 160 and not is_date_line
+
+            if is_job_line:
+                flush()
+                if " at " in line:
+                    parts = re.split(r"\s+at\s+", line, maxsplit=1, flags=re.I)
+                    current_role = parts[0].strip()
+                    current_company = parts[1].strip() if len(parts) > 1 else ""
+                elif " | " in line:
+                    parts = line.split(" | ", 1)
+                    current_role = parts[0].strip()
+                    current_company = parts[1].strip()
+                elif " — " in line or " – " in line:
+                    parts = re.split(r"\s+[—–]\s+", line, maxsplit=1)
+                    current_role = parts[0].strip()
+                    current_company = parts[1].strip() if len(parts) > 1 else ""
+                else:
+                    current_role = line
+                    current_company = ""
+            elif is_date_line and current_role:
+                current_dates = line
+            elif current_role:
+                if line.startswith(("•", "-", "*", "·")):
+                    current_desc.append(line.lstrip("•-*· ").strip())
+                elif not is_date_line:
+                    current_desc.append(line)
+
+        flush()
+        return experiences
+
+    def _parse_experience_by_dates(self) -> list[Experience]:
+        """Fallback: anchor entries on date-range lines."""
+        experiences: list[Experience] = []
         for i, line in enumerate(self.lines):
-            if 'education' in line.lower():
-                edu_start = i
-                break
-        
-        if edu_start == -1:
+            if not DATE_RANGE_RE.search(line):
+                continue
+            role_line = ""
+            company_line = ""
+            desc_parts: list[str] = []
+            if i > 0:
+                role_line = self.lines[i - 1]
+            if i > 1 and len(self.lines[i - 2]) < 120:
+                prev = self.lines[i - 2]
+                if any(h in prev.lower() for h in JOB_TITLE_HINTS):
+                    role_line = prev
+                    company_line = self.lines[i - 1]
+            for j in range(i + 1, min(i + 6, len(self.lines))):
+                nxt = self.lines[j]
+                if not nxt or DATE_RANGE_RE.search(nxt) or self._is_section_header(nxt):
+                    break
+                desc_parts.append(nxt)
+            if role_line:
+                role, company = role_line, company_line
+                if " at " in role_line.lower():
+                    parts = re.split(r"\s+at\s+", role_line, maxsplit=1, flags=re.I)
+                    role, company = parts[0].strip(), parts[1].strip()
+                s, e = self._parse_date_range(line)
+                experiences.append(
+                    Experience(
+                        role=role,
+                        company=company or "",
+                        start_date=s,
+                        end_date=e,
+                        description=" ".join(desc_parts) if desc_parts else None,
+                    )
+                )
+        return experiences[:12]
+
+    def _extract_education(self) -> list[Education]:
+        education: list[Education] = []
+        start, end = self._section_bounds(
+            ("education", "academic"),
+            ("experience", "skills", "certification", "project", "language"),
+        )
+        if start < 0:
             return education
-        
-        # Find section end
-        section_end = len(self.lines)
-        next_sections = ['experience', 'skills', 'certification', 'project', 'language']
-        
-        for i in range(edu_start + 1, len(self.lines)):
-            if any(section in self.lines[i].lower() for section in next_sections):
-                section_end = i
-                break
-        
-        # Parse degrees
-        degree_keywords = ['bachelor', 'master', 'phd', 'associate', 'b.s.', 'b.a.', 'm.s.', 'm.a.']
-        
-        for i in range(edu_start + 1, section_end):
-            line = self.lines[i].strip()
-            
-            if any(degree in line.lower() for degree in degree_keywords):
-                parts = re.split(r' in | - | at |from', line, flags=re.IGNORECASE)
+
+        degree_keywords = (
+            "bachelor",
+            "master",
+            "phd",
+            "doctorate",
+            "associate",
+            "b.s.",
+            "b.a.",
+            "m.s.",
+            "m.a.",
+            "mba",
+            "b.sc",
+            "m.sc",
+        )
+
+        for i in range(start + 1, end):
+            line = self.lines[i]
+            if not line:
+                continue
+            if any(deg in line.lower() for deg in degree_keywords):
+                parts = re.split(r"\s+in\s+|\s+-\s+|\s+at\s+|\s+from\s+", line, maxsplit=2, flags=re.I)
                 degree = parts[0].strip()
                 field = parts[1].strip() if len(parts) > 1 else None
-                
-                # Look for institution and dates nearby
-                institution = None
+                institution = ""
                 grad_date = None
-                
-                if i + 1 < section_end:
-                    next_line = self.lines[i + 1].strip()
-                    if not any(d in next_line for d in degree_keywords):
-                        institution = next_line
-                        
-                        if i + 2 < section_end:
-                            date_line = self.lines[i + 2].strip()
-                            if re.search(r'\d{4}', date_line):
-                                grad_date = date_line
-                
-                education.append(Education(
-                    degree=degree,
-                    institution=institution or '',
-                    field=field,
-                    graduation_date=grad_date
-                ))
-        
+                if i + 1 < end:
+                    nxt = self.lines[i + 1]
+                    if not any(d in nxt.lower() for d in degree_keywords):
+                        institution = nxt
+                        if i + 2 < end and re.search(r"\d{4}", self.lines[i + 2]):
+                            grad_date = self.lines[i + 2]
+                education.append(
+                    Education(
+                        degree=degree,
+                        institution=institution,
+                        field=field,
+                        graduation_date=grad_date,
+                    )
+                )
         return education
 
     def _extract_skills(self) -> dict:
-        """Extract skills."""
         skills = {"technical": [], "soft": [], "languages": []}
-        
-        # Find skills section
-        skills_start = -1
-        for i, line in enumerate(self.lines):
-            if 'skill' in line.lower():
-                skills_start = i
-                break
-        
-        if skills_start == -1:
-            # Extract from entire text
-            skills_text = self.lower_text
-        else:
-            # Find section end
-            section_end = len(self.lines)
-            next_sections = ['experience', 'education', 'certification', 'project', 'language']
-            
-            for i in range(skills_start + 1, len(self.lines)):
-                if any(section in self.lines[i].lower() for section in next_sections):
-                    section_end = i
-                    break
-            
-            skills_text = ' '.join(self.lines[skills_start:section_end]).lower()
-        
-        # Extract technical skills
-        for keyword in self.TECHNICAL_KEYWORDS:
-            if keyword in skills_text:
-                skills["technical"].append(keyword)
-        
-        # Extract soft skills
-        for skill in self.SOFT_SKILLS:
-            if skill in skills_text:
-                skills["soft"].append(skill)
-        
-        # Extract languages
-        language_keywords = ['english', 'spanish', 'french', 'german', 'chinese', 'japanese', 'arabic', 'portuguese', 'russian', 'korean']
-        for lang in language_keywords:
-            if lang in skills_text:
-                skills["languages"].append(lang.capitalize())
-        
-        # Remove duplicates and sort
-        skills["technical"] = sorted(list(set(skills["technical"])))
-        skills["soft"] = sorted(list(set(skills["soft"])))
-        skills["languages"] = sorted(list(set(skills["languages"])))
-        
+
+        start, end = self._section_bounds(
+            ("skills", "technical skills", "core competencies", "technologies"),
+            ("experience", "education", "certification", "project", "language"),
+        )
+
+        section_text = (
+            "\n".join(self.lines[start:end]) if start >= 0 else self.text
+        )
+        full_text = self.text
+
+        technical = find_technical_skills(section_text)
+        if len(technical) < 3:
+            technical = find_technical_skills(full_text)
+
+        soft = find_soft_skills(section_text)
+        if not soft:
+            soft = find_soft_skills(full_text)
+
+        lang_text = section_text.lower()
+        if start < 0:
+            lang_start, lang_end = self._section_bounds(
+                ("languages", "language"),
+                ("experience", "education", "skills", "certification", "project"),
+            )
+            if lang_start >= 0:
+                lang_text = "\n".join(self.lines[lang_start:lang_end]).lower()
+
+        languages = []
+        for lang in LANGUAGE_KEYWORDS:
+            if re.search(rf"\b{lang}\b", lang_text):
+                languages.append(lang.capitalize())
+
+        skills["technical"] = technical
+        skills["soft"] = soft
+        skills["languages"] = sorted(set(languages))
         return skills
 
     def _extract_certifications(self) -> list[Certification]:
-        """Extract certifications."""
-        certifications = []
-        
-        cert_start = -1
-        for i, line in enumerate(self.lines):
-            if 'certification' in line.lower() or 'certificate' in line.lower():
-                cert_start = i
-                break
-        
-        if cert_start == -1:
+        certifications: list[Certification] = []
+        start, end = self._section_bounds(
+            ("certification", "certificate", "licenses"),
+            ("experience", "education", "skills", "project", "language"),
+        )
+        if start < 0:
             return certifications
-        
-        # Find section end
-        section_end = len(self.lines)
-        next_sections = ['experience', 'education', 'skills', 'project', 'language']
-        
-        for i in range(cert_start + 1, len(self.lines)):
-            if any(section in self.lines[i].lower() for section in next_sections):
-                section_end = i
-                break
-        
-        # Parse certifications
-        for i in range(cert_start + 1, section_end):
-            line = self.lines[i].strip()
-            if line and not line.startswith(('•', '-', '*')):
-                parts = line.split(' - ') if ' - ' in line else line.split(' | ') if ' | ' in line else [line]
-                cert = Certification(
-                    name=parts[0].strip(),
-                    issuer=parts[1].strip() if len(parts) > 1 else None,
-                    date=parts[2].strip() if len(parts) > 2 else None
+
+        for i in range(start + 1, end):
+            line = self.lines[i]
+            if line and not line.startswith(("•", "-", "*")):
+                parts = (
+                    line.split(" - ")
+                    if " - " in line
+                    else line.split(" | ")
+                    if " | " in line
+                    else [line]
                 )
-                certifications.append(cert)
-        
+                certifications.append(
+                    Certification(
+                        name=parts[0].strip(),
+                        issuer=parts[1].strip() if len(parts) > 1 else None,
+                        date=parts[2].strip() if len(parts) > 2 else None,
+                    )
+                )
         return certifications
 
     def _extract_projects(self) -> list[Project]:
-        """Extract projects."""
-        projects = []
-        
-        proj_start = -1
-        for i, line in enumerate(self.lines):
-            if 'project' in line.lower():
-                proj_start = i
-                break
-        
-        if proj_start == -1:
+        projects: list[Project] = []
+        start, end = self._section_bounds(
+            ("projects", "personal projects", "selected projects"),
+            ("experience", "education", "skills", "certification", "language"),
+        )
+        if start < 0:
             return projects
-        
-        # Find section end
-        section_end = len(self.lines)
-        next_sections = ['experience', 'education', 'skills', 'certification', 'language']
-        
-        for i in range(proj_start + 1, len(self.lines)):
-            if any(section in self.lines[i].lower() for section in next_sections):
-                section_end = i
-                break
-        
-        # Parse projects (simple parsing)
-        current_project = None
-        for i in range(proj_start + 1, section_end):
-            line = self.lines[i].strip()
-            
-            if line and re.match(r'^[A-Z].*', line):
-                if current_project:
-                    projects.append(current_project)
-                current_project = Project(name=line)
-            elif line and current_project:
-                current_project.description = (current_project.description or '') + ' ' + line
-        
-        if current_project:
-            projects.append(current_project)
-        
+
+        current: Optional[Project] = None
+        for i in range(start + 1, end):
+            line = self.lines[i]
+            if not line:
+                continue
+            if line.startswith(("•", "-", "*")) and current:
+                current.description = (
+                    (current.description or "") + " " + line.lstrip("•-* ").strip()
+                ).strip()
+            elif re.match(r"^[A-Z0-9]", line) and len(line) < 120:
+                if current:
+                    projects.append(current)
+                current = Project(name=line)
+            elif current:
+                current.description = (
+                    (current.description or "") + " " + line
+                ).strip()
+        if current:
+            projects.append(current)
         return projects
 
-    def _parse_date_range(self, date_str: str) -> tuple[Optional[str], Optional[str]]:
-        """Parse date range string."""
+    def _parse_date_range(self, date_str: Optional[str]) -> tuple[Optional[str], Optional[str]]:
         if not date_str:
             return None, None
-        
-        # Try to extract two dates
-        dates = re.findall(r'\d{1,2}[/-]\d{1,2}[/-]\d{4}|\d{4}', date_str)
-        
+        dates = re.findall(r"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}", date_str)
         if len(dates) >= 2:
             return dates[0], dates[1]
-        elif len(dates) == 1:
-            if 'present' in date_str.lower() or 'current' in date_str.lower():
-                return dates[0], 'Present'
+        if len(dates) == 1:
+            if re.search(r"present|current|now", date_str, re.I):
+                return dates[0], "Present"
             return dates[0], None
-        
         return None, None

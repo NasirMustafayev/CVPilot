@@ -262,6 +262,7 @@ function LandingPage({
           </article>
         </div>
       </section>
+      <Footer />
     </main>
   )
 }
@@ -938,6 +939,7 @@ function Dashboard({
           </section>
         )}
       </section>
+      <Footer />
     </main>
   )
 }
@@ -1016,6 +1018,23 @@ function formatHistoryDate(iso: string): string {
   } catch {
     return iso.slice(0, 10)
   }
+}
+
+function Footer() {
+  return (
+    <footer className="site-footer">
+      <p>
+        Built by{' '}
+        <a href="https://www.linkedin.com/in/nasirmustafayev/" target="_blank" rel="noopener noreferrer">
+          Nasir Mustafayev
+        </a>
+        {' · '}
+        <a href="https://github.com/NasirMustafayev" target="_blank" rel="noopener noreferrer">
+          GitHub
+        </a>
+      </p>
+    </footer>
+  )
 }
 
 export default App

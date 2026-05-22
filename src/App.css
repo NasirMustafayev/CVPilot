@@ -1281,3 +1281,21 @@ progress::-moz-progress-bar {
     grid-template-columns: 1fr;
   }
 }
+.site-footer {
+  text-align: center;
+  padding: 1.5rem;
+  font-size: 13px;
+  color: var(--color-text-tertiary, #888);
+  border-top: 0.5px solid var(--color-border-tertiary, #e5e5e5);
+  margin-top: auto;
+}
+
+.site-footer a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.site-footer a:hover {
+  color: var(--color-text-primary, #111);
+}

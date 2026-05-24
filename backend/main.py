@@ -71,9 +71,11 @@ class FitAnalysisResponse(BaseModel):
     cv_data: CVDataResponse
     fit_score: dict
     interview_questions: list[str]
-    analysis_mode: str = "rules"
+    analysis_mode: str = "local-ml"
     matched_skills: list[str] = []
     missing_skills: list[str] = []
+    semantic_matches: list[dict] = []
+    semantic_score: float = 0.0
 
 
 class AnalysisSummary(BaseModel):
@@ -299,6 +301,8 @@ async def analyze_cv(
             "analysis_mode": analysis_mode,
             "matched_skills": fit_score.matched_skills,
             "missing_skills": fit_score.missing_skills,
+            "semantic_matches": fit_score.semantic_matches,
+            "semantic_score": fit_score.semantic_score,
         }
 
         analysis_id = save_analysis(

@@ -642,7 +642,11 @@ function Dashboard({
         {analysis && (
           <p className="analysis-meta">
             {mode === 'hr' ? 'Candidate evaluation' : 'Personal fit check'} ·{' '}
-            {analysis.analysis_mode === 'llm' ? 'AI-enhanced' : 'Requirement-based'}
+            {analysis.analysis_mode === 'llm'
+              ? 'AI-enhanced'
+              : analysis.analysis_mode === 'local-ml'
+                ? 'Local ML semantic matching'
+                : 'Requirement-based'}
             {analysis.matched_skills.length > 0 && (
               <> · {analysis.matched_skills.length} skills matched</>
             )}
@@ -821,6 +825,34 @@ function Dashboard({
               <p>{copy.extractedHint}</p>
             </div>
             <ExtractedCvSummary analysis={analysis} mode={mode} />
+          </section>
+        )}
+
+        {analysis?.semantic_matches && analysis.semantic_matches.length > 0 && (
+          <section className="panel wide-panel semantic-panel">
+            <div className="panel-title">
+              <h2>Local semantic evidence</h2>
+              <p>
+                Requirement-to-CV matches found by the offline analyzer
+                {typeof analysis.semantic_score === 'number'
+                  ? ` · ${Math.round(analysis.semantic_score)}% semantic confidence`
+                  : ''}
+                .
+              </p>
+            </div>
+            <div className="semantic-list">
+              {analysis.semantic_matches.slice(0, 4).map((match) => (
+                <article key={`${match.requirement}-${match.evidence}`}>
+                  <div>
+                    <strong>{match.requirement}</strong>
+                    <span className={`confidence confidence-${match.confidence}`}>
+                      {match.confidence}
+                    </span>
+                  </div>
+                  <p>{match.evidence}</p>
+                </article>
+              ))}
+            </div>
           </section>
         )}
 

@@ -11,13 +11,28 @@ from typing import Iterable
 TECHNICAL_SKILLS: tuple[str, ...] = (
     "machine learning",
     "deep learning",
+    "natural language processing",
+    "computer vision",
+    "github actions",
+    "gitlab ci",
+    "rest api",
+    "unit testing",
+    "integration testing",
+    "testing library",
+    "react native",
+    "next.js",
     "node.js",
+    "express.js",
     "ci/cd",
+    "html",
+    "css",
+    "tailwind",
     "c++",
     "c#",
     "typescript",
     "javascript",
     "postgresql",
+    "sql server",
     "mongodb",
     "elasticsearch",
     "kubernetes",
@@ -28,33 +43,75 @@ TECHNICAL_SKILLS: tuple[str, ...] = (
     "graphql",
     "angular",
     "express",
+    "nestjs",
     "django",
     "flask",
+    "spring",
     "jenkins",
     "gitlab",
+    "playwright",
+    "cypress",
+    "selenium",
+    "vitest",
+    "jest",
     "python",
     "react",
+    "redux",
     "vue",
     "java",
     "rust",
     "csharp",
     "docker",
+    "terraform",
     "azure",
     "mysql",
+    "sqlite",
     "redis",
+    "kafka",
+    "rabbitmq",
     "numpy",
     "pandas",
+    "power bi",
+    "tableau",
+    "excel",
+    "figma",
     "scrum",
     "agile",
     "nosql",
+    "openapi",
     "rest",
     "api",
     "aws",
     "gcp",
     "git",
     "sql",
+    "linux",
+    "bash",
+    "qa",
     "go",
 )
+
+SKILL_ALIASES: dict[str, tuple[str, ...]] = {
+    "node.js": ("nodejs", "node js", "node"),
+    "express.js": ("expressjs", "express js"),
+    "next.js": ("nextjs", "next js"),
+    "react": ("react.js", "reactjs"),
+    "vue": ("vue.js", "vuejs"),
+    "typescript": ("type script",),
+    "javascript": ("java script", "ecmascript"),
+    "postgresql": ("postgres", "postgre sql"),
+    "mongodb": ("mongo db", "mongo"),
+    "c#": ("c sharp",),
+    "c++": ("cpp",),
+    "github actions": ("github ci",),
+    "gitlab ci": ("gitlab-ci",),
+    "ci/cd": ("cicd", "ci cd"),
+    "rest api": ("restful api", "restful apis", "rest apis"),
+    "power bi": ("powerbi",),
+    "machine learning": ("ml",),
+    "natural language processing": ("nlp",),
+    "computer vision": (),
+}
 
 SOFT_SKILLS: frozenset[str] = frozenset(
     {
@@ -205,10 +262,25 @@ def find_technical_skills(text: str) -> list[str]:
         key = skill.lower()
         if key in seen:
             continue
-        if skill_pattern(skill).search(lower):
+        candidates = (skill, *SKILL_ALIASES.get(skill, ()))
+        if any(skill_pattern(candidate).search(lower) for candidate in candidates):
             found.append(skill)
             seen.add(key)
-    return sorted(found, key=str.lower)
+    return sorted(_remove_redundant_skills(found), key=str.lower)
+
+
+def _remove_redundant_skills(skills: Iterable[str]) -> list[str]:
+    values = set(skills)
+    if "rest api" in values:
+        values.discard("rest")
+        values.discard("api")
+    if "openapi" in values:
+        values.discard("api")
+    if "postgresql" in values or "mysql" in values or "sql server" in values:
+        values.discard("sql")
+    if "github actions" in values or "gitlab ci" in values:
+        values.discard("ci/cd")
+    return list(values)
 
 
 def find_soft_skills(text: str) -> list[str]:

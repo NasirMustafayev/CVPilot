@@ -85,9 +85,16 @@ export interface AnalysisResult {
   cv_data: CVData
   fit_score: FitScore
   interview_questions: string[]
-  analysis_mode: 'rules' | 'llm'
+  analysis_mode: 'rules' | 'local-ml' | 'llm'
   matched_skills: string[]
   missing_skills: string[]
+  semantic_matches?: Array<{
+    requirement: string
+    evidence: string
+    similarity: number
+    confidence: 'low' | 'medium' | 'high'
+  }>
+  semantic_score?: number
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? '/api'

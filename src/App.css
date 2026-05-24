@@ -1171,6 +1171,62 @@ progress::-moz-progress-bar {
   margin-top: 2px;
 }
 
+.semantic-list {
+  display: grid;
+  gap: 12px;
+}
+
+.semantic-list article {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.semantic-list article > div {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.semantic-list strong {
+  color: #0f172a;
+  line-height: 1.35;
+}
+
+.semantic-list p {
+  margin: 0;
+  color: #475569;
+  line-height: 1.5;
+}
+
+.confidence {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+.confidence-high {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.confidence-medium {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
+.confidence-low {
+  color: #92400e;
+  background: #fef3c7;
+}
+
 .workflow-hint {
   display: grid;
   grid-template-columns: auto 1fr;
